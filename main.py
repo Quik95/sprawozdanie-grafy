@@ -1,100 +1,14 @@
-from collections import defaultdict
-from typing import List, Optional, Iterator, Tuple
-from dataclasses import dataclass
+import csv
+import gc
+import os
+import random
+from timeit import Timer
+from typing import List, Iterator, Tuple, Any, Dict
+
+from macierz import AdjacencyMatrix
 
 
-@dataclass
-class AdjacencyDirectedList:
-    list: List['AdjacencyDirectedNode']
-
-    @staticmethod
-    def new(data: List['AdjacencyDirectedNode']) -> 'AdjacencyDirectedList':
-        return AdjacencyDirectedList(data)
-
-    @staticmethod
-    def default() -> 'AdjacencyDirectedList':
-        return AdjacencyDirectedList([
-            AdjacencyDirectedNode(1, [2, 5]),
-            AdjacencyDirectedNode(4, [5]),
-            AdjacencyDirectedNode(2, [3, 5]),
-            AdjacencyDirectedNode(5, []),
-            AdjacencyDirectedNode(6, []),
-            AdjacencyDirectedNode(3, [9]),
-            AdjacencyDirectedNode(7, [3, 8]),
-            AdjacencyDirectedNode(8, [9]),
-            AdjacencyDirectedNode(9, [])
-        ])
-
-    def __getitem__(self, item) -> Optional['AdjacencyDirectedNode']:
-        for node in self.list:
-            if node.value == item:
-                return node
-        return None
-
-    def depth_first_search(self) -> Iterator[Tuple[str, int]]:
-        values: List[int] = [self.list[0].value]
-        stack: List[int] = [self.list[0].value]
-        yield "in", stack[0]
-        while len(values) != len(self.list):
-            # restartuj od izolowanych
-            if len(stack) == 0:
-                for item in self.list:
-                    if item.value not in values:
-                        values.append(item.value)
-                        stack.append(item.value)
-                        yield "in", item.value
-                        break
-                # wszystkie znalezione
-                if len(stack) == 0:
-                    break
-            node: AdjacencyDirectedNode = self[stack[-1]]
-            all_next_unvisited = node.get_all_next(values)
-            if len(all_next_unvisited) == 0:
-                yield "out", stack.pop()
-                continue
-            values.append(all_next_unvisited[0])
-            stack.append(all_next_unvisited[0])
-            yield "in", all_next_unvisited[0]
-        while len(stack) > 0:
-            yield "out", stack.pop()
-        return None
-
-    def breadth_first_search(self) -> List[int]:
-        values: List[int] = []
-        queue: List[int] = [self.list[0].value]
-
-        while len(values) != len(self.list):
-            if len(queue) == 0:
-                for item in self.list:
-                    if item.value not in values:
-                        queue.append(item.value)
-                        break
-                if len(queue) == 0:
-                    break
-            node: AdjacencyDirectedNode = self[queue[0]]
-            for adjacent in node.adjacent_nodes:
-                if adjacent not in values and adjacent not in queue:
-                    queue.append(adjacent)
-            values.append(node.value)
-            queue.pop(0)
-        return values
-
-
-@dataclass
-class AdjacencyDirectedNode:
-    value: int
-    adjacent_nodes: List[int]
-
-    def get_all_next(self, already_visited: List[int]) -> List[int]:
-        if len(self.adjacent_nodes) == 0:
-            return []
-        res = []
-        for item in self.adjacent_nodes:
-            if item not in already_visited:
-                res.append(item)
-        return res
-
-def topological_sort(data: Iterator[Tuple[str, int]]) -> List[int]:
+def topological_sort_no_sorting(data: Iterator[Tuple[str, int]]) -> Dict[int, List[int]]:
     time_values = {}
     i = 1
     for value_type, value in data:
@@ -103,32 +17,137 @@ def topological_sort(data: Iterator[Tuple[str, int]]) -> List[int]:
         elif value_type == "out":
             time_values[value][1] = i
         i += 1
+    return time_values
+
+
+def topological_sort(data: Iterator[Tuple[str, int]]) -> List[int]:
+    time_values = topological_sort_no_sorting(data)
     res = [(key, value[1]) for key, value in time_values.items()]
     return [key for key, value in reversed(sorted(res, key=lambda k: k[1]))]
 
 
+def generate_random_graph(size: int, density: float) -> AdjacencyMatrix:
+    matrix = AdjacencyMatrix()
+    matrix.list = [[0 for _ in range(0, size)] for _ in range(0, size)]
+
+    n = int(size * (size - 1) * density)
+
+    for _ in range(n):
+        i = 0
+        j = 0
+        while True:
+            i = random.randint(0, size - 1)
+            j = random.randint(0, size - 1)
+            if matrix.list[i][j] == 0 and i != j:
+                break
+
+        matrix.list[i][j] = 1
+    # with open("/tmp/a", "w") as f:
+    #     for row in matrix.list:
+    #         f.write(",".join([str(i) for i in row]) + "\n")
+
+    return matrix
+
+
+def benchmark_function(name: str, f: Any) -> float:
+    number_of_runs = 10 if "lista łuków" not in name else 1
+    gc.collect()
+    time_taken = Timer(f).timeit(number=number_of_runs) / number_of_runs
+    print(f"{name}: {time_taken}s")
+    return time_taken
+
+
+def number_of_return_nodes(data: Dict[int, List[int]], matrix: AdjacencyMatrix) -> int:
+    keys = list(data.keys())
+    n = 0
+    for i in range(0, len(keys)):
+        for j in range(i + 1, len(keys)):
+            v = keys[i]
+            u = keys[j]
+            if matrix.get(v, u) == 1 and data[v][0] < data[u][0] < data[u][1] < data[v][1]:
+                n += 1
+    return n
+
+
+def save_measurement(name: str, measurements: List[float]):
+    with open("wyniki.csv", "a+", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow([name, *measurements])
+
 
 if __name__ == '__main__':
-    graph = AdjacencyDirectedList.default()
-    graph2 = AdjacencyDirectedList.new(
-        [AdjacencyDirectedNode(1, [2, 4, 12]),
-         AdjacencyDirectedNode(2, [1, 4]),
-         AdjacencyDirectedNode(4, [1, 12, 2, 7, 6]),
-         AdjacencyDirectedNode(12, [1, 4, 10, 11]),
-         AdjacencyDirectedNode(10, [12, 11]),
-         AdjacencyDirectedNode(11, [12, 10]),
-         AdjacencyDirectedNode(7, [3, 4, 6]),
-         AdjacencyDirectedNode(3, [7]),
-         AdjacencyDirectedNode(6, [7, 4, 13, 5, 9]),
-         AdjacencyDirectedNode(13, [6]),
-         AdjacencyDirectedNode(5, [6, 9, 8]),
-         AdjacencyDirectedNode(9, [6, 5, 8]),
-         AdjacencyDirectedNode(8, [5, 9]),
-         AdjacencyDirectedNode(14, [15]),
-         AdjacencyDirectedNode(15, [14])],
-    )
-    print(f"{list((val for type, val in graph.depth_first_search() if type == 'in'))=}")
-    print(f"{graph.breadth_first_search()=}")
-    print(f"{graph2.depth_first_search()=}")
-    print(f"{graph2.breadth_first_search()=}")
-    print(f"{topological_sort(graph.depth_first_search())=}")
+    try:
+        os.remove("wyniki.csv")
+    except FileNotFoundError:
+        pass
+
+    steps = [100, 110, 120, 130, 140, 150, 160, 170, 180, 190, 200]
+
+    with open("wyniki.csv", "a") as f:
+        writer = csv.writer(f)
+        writer.writerow(["name", *steps])
+
+    sort_top_02 = []
+    sort_top_04 = []
+
+    n_powrotne_02 = []
+    n_powrotne_04 = []
+
+    time_mac_02 = []
+    time_list_02 = []
+    time_edge_02 = []
+
+    time_mac_04 = []
+    time_list_04 = []
+    time_edge_04 = []
+
+    for step in steps:
+        print(f"{step=}")
+        graph_density_02 = generate_random_graph(step, 0.2)
+        graph_density_04 = generate_random_graph(step, 0.4)
+
+        graph_density_02_list = graph_density_02.to_adjacency_list()
+        graph_density_04_list = graph_density_04.to_adjacency_list()
+
+        graph_density_02_edge = graph_density_02.to_list_of_edges()
+        graph_density_04_edge = graph_density_04.to_list_of_edges()
+
+        sort_top_02.append(benchmark_function('Sortowanie Topologiczne d=0.2',
+                                              lambda: topological_sort_no_sorting(
+                                                  graph_density_02_list.depth_first_search())))
+        sort_top_04.append(benchmark_function('Sortowanie Topologiczne d=0.4',
+                                              lambda: topological_sort_no_sorting(
+                                                  graph_density_04_list.depth_first_search())))
+
+        time_values = topological_sort_no_sorting(graph_density_02_list.depth_first_search())
+        n_powrotne_02.append(graph_density_02.number_of_return_nodes(time_values))
+        time_mac_02.append(benchmark_function("Zliczanie łuków powrotnych d=0.2 (macierz)",
+                                              lambda: graph_density_02.number_of_return_nodes(time_values)))
+        time_list_02.append(benchmark_function("Zliczanie łuków powrotnych d=0.2 (lista następników)",
+                                               lambda: graph_density_02_list.number_of_return_nodes(time_values)))
+        time_edge_02.append(benchmark_function("Zliczanie łuków powrotnych d=0.2 (lista łuków)",
+                                               lambda: graph_density_02_edge.number_of_return_nodes(time_values)))
+
+        time_values = topological_sort_no_sorting(graph_density_04_list.depth_first_search())
+        n_powrotne_04.append(graph_density_04.number_of_return_nodes(time_values))
+        time_mac_04.append(benchmark_function("Zliczanie łuków powrotnych d=0.4 (macierz)",
+                                              lambda: graph_density_04.number_of_return_nodes(time_values)))
+        time_list_04.append(benchmark_function("Zliczanie łuków powrotnych d=0.4 (lista następników)",
+                                               lambda: graph_density_04_list.number_of_return_nodes(time_values)))
+        time_edge_04.append(benchmark_function("Zliczanie łuków powrotnych d=0.4 (lista łuków)",
+                                               lambda: graph_density_04_edge.number_of_return_nodes(time_values)))
+
+    save_measurement("Sortowanie topologiczne d=0.2", sort_top_02)
+    save_measurement("Sortowanie topologiczne d=0.4", sort_top_04)
+
+    save_measurement("Liczba łuków powrotnych d=0.2", n_powrotne_02)
+    save_measurement("Liczba łuków powrotnych d=0.4", n_powrotne_04)
+
+    save_measurement("Czas macierz d=0.2", time_mac_02)
+    save_measurement("Czas macierz d=0.4", time_mac_04)
+
+    save_measurement("Czas lista d=0.2", time_list_02)
+    save_measurement("Czas lista d=0.4", time_list_04)
+
+    save_measurement("Czas lista łuków d=0.2", time_edge_02)
+    save_measurement("Czas lista łuków d=0.4", time_edge_04)

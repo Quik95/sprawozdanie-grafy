@@ -65,10 +65,7 @@ class AdjacencyDirectedList:
         return n
 
     def __getitem__(self, item: int) -> 'AdjacencyDirectedNode':
-        for node in self.list:
-            if node.value == item:
-                return node
-        raise IndexError
+        return self.list[item - 1]
 
 
 @dataclass

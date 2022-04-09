@@ -20,14 +20,14 @@ class AdjacencyMatrix:
 
     def to_adjacency_list(self) -> AdjacencyDirectedList:
         l = AdjacencyDirectedList()
-        l.list = []
+        l.list = [0 for _ in range(len(self.list))]
 
         for i, row in enumerate(self.list):
             t = AdjacencyDirectedNode(i + 1, [])
             for j, item in enumerate(row):
                 if item == 1:
                     t.adjacent_nodes.append(j + 1)
-            l.list.append(t)
+            l.list[i] = t
 
         return l
 
